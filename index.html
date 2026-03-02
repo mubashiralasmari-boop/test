@@ -1122,20 +1122,36 @@ function hideAdminModal() {
 
 function doAdminLogin() {
   const pass = document.getElementById('admin-pass-input').value;
-  if (!ADMIN_PASSWORD) {
-    document.getElementById('admin-pass-error').textContent = '⚠️ جاري التحميل، حاول مجدداً';
-    document.getElementById('admin-pass-error').style.display = 'block';
-    return;
-  }
-  if (pass === ADMIN_PASSWORD) {
-    hideAdminModal();
-    showScreen('s-admin');
-    renderAdminSubs();
-  } else {
-    document.getElementById('admin-pass-error').textContent = 'كلمة السر غلط!';
-    document.getElementById('admin-pass-error').style.display = 'block';
-    document.getElementById('admin-pass-input').value = '';
-  }
+  const errEl = document.getElementById('admin-pass-error');
+  const btn = document.querySelector('#admin-modal .btn-warn');
+
+  btn.textContent = '⏳';
+  btn.disabled = true;
+
+  sbFetch('config?key=eq.admin_password&select=value')
+    .then(data => {
+      const correct = data && data.length > 0 ? data[0].value : null;
+      if (!correct) {
+        errEl.textContent = '⚠️ خطأ في الاتصال';
+        errEl.style.display = 'block';
+      } else if (pass === correct) {
+        hideAdminModal();
+        showScreen('s-admin');
+        renderAdminSubs();
+      } else {
+        errEl.textContent = 'كلمة السر غلط!';
+        errEl.style.display = 'block';
+        document.getElementById('admin-pass-input').value = '';
+      }
+    })
+    .catch(() => {
+      errEl.textContent = '⚠️ خطأ في الاتصال';
+      errEl.style.display = 'block';
+    })
+    .finally(() => {
+      btn.textContent = 'دخول';
+      btn.disabled = false;
+    });
 }
 
 function showAdminLogin() { showAdminModal(); }
