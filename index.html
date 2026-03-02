@@ -1065,7 +1065,19 @@ async function sbFetch(path, options = {}) {
 }
 
 // =========== LOGIN ===========
-const ADMIN_PASSWORD = 'admin2024';
+let ADMIN_PASSWORD = null; // تُجلب من Supabase
+
+// جلب كلمة سر الأدمن من Supabase عند التحميل
+async function loadAdminPassword() {
+  try {
+    const data = await sbFetch('config?key=eq.admin_password&select=value');
+    if (data && data.length > 0) {
+      ADMIN_PASSWORD = data[0].value;
+    }
+  } catch(e) {
+    console.error('فشل تحميل إعدادات الأدمن', e);
+  }
+}
 
 async function doLogin() {
   const user   = document.getElementById('login-user').value.trim();
@@ -1110,11 +1122,17 @@ function hideAdminModal() {
 
 function doAdminLogin() {
   const pass = document.getElementById('admin-pass-input').value;
+  if (!ADMIN_PASSWORD) {
+    document.getElementById('admin-pass-error').textContent = '⚠️ جاري التحميل، حاول مجدداً';
+    document.getElementById('admin-pass-error').style.display = 'block';
+    return;
+  }
   if (pass === ADMIN_PASSWORD) {
     hideAdminModal();
     showScreen('s-admin');
     renderAdminSubs();
   } else {
+    document.getElementById('admin-pass-error').textContent = 'كلمة السر غلط!';
     document.getElementById('admin-pass-error').style.display = 'block';
     document.getElementById('admin-pass-input').value = '';
   }
@@ -1213,6 +1231,7 @@ document.addEventListener('keydown', e => {
 });
 
 // =========== INIT ===========
+loadAdminPassword();
 addRound(); addRound();
 addPlayer(); addPlayer();
 </script>
