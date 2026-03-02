@@ -581,10 +581,9 @@ textarea { min-height: 60px; resize: none; }
     </div>
 
     <div class="save-notice" id="save-notice">
-      ✅ تم التحديث — اضغط "تحميل الملف" لحفظ التغييرات
+      ✅ تم التحديث
     </div>
 
-    <button class="btn btn-success" onclick="downloadUpdatedFile()">💾 تحميل الملف المحدّث</button>
     <button class="btn btn-ghost"   onclick="showScreen('s-login')">↩️ رجوع لصفحة الدخول</button>
   </div>
 </div>
@@ -1039,29 +1038,59 @@ function launchConfetti(count = 60) {
   }
 }
 
+// =========== SUPABASE CONFIG ===========
+const SUPABASE_URL = 'https://mouszggbyvoxwprhxxvs.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_LXo7uAduFHWllh3sMRR7Sw_MzffkARe';
+
+async function sbFetch(path, options = {}) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${SUPABASE_KEY}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation',
+      ...options.headers
+    },
+    ...options
+  });
+  if (!res.ok && res.status !== 204) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || res.statusText);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
 // =========== LOGIN ===========
-// كلمة سر الأدمن - غيّرها لكلمة سرك الخاصة
 const ADMIN_PASSWORD = 'admin2024';
 
-// قائمة المشتركين
-let USERS = [
-  { username: 'مشتري1', password: 'pass123' },
-  { username: 'مشتري2', password: 'abc456' },
-];
+async function doLogin() {
+  const user   = document.getElementById('login-user').value.trim();
+  const pass   = document.getElementById('login-pass').value.trim();
+  const errEl  = document.getElementById('login-error');
+  const btnEl  = document.querySelector('#s-login .btn-primary');
 
-function doLogin() {
-  const user = document.getElementById('login-user').value.trim();
-  const pass = document.getElementById('login-pass').value.trim();
-  const errEl = document.getElementById('login-error');
+  if (!user || !pass) { errEl.classList.add('show'); return; }
 
-  const found = USERS.find(u => u.username === user && u.password === pass);
-  if (found) {
-    errEl.classList.remove('show');
-    showScreen('s-setup');
-  } else {
+  btnEl.textContent = '⏳ جاري التحقق...';
+  btnEl.disabled = true;
+
+  try {
+    const data = await sbFetch(`subscribers?username=eq.${encodeURIComponent(user)}&password=eq.${encodeURIComponent(pass)}&select=id`);
+    if (data && data.length > 0) {
+      errEl.classList.remove('show');
+      showScreen('s-setup');
+    } else {
+      errEl.classList.add('show');
+      document.getElementById('login-pass').value = '';
+    }
+  } catch(e) {
+    errEl.textContent = '⚠️ خطأ في الاتصال، تحقق من الإنترنت';
     errEl.classList.add('show');
-    document.getElementById('login-pass').value = '';
   }
+
+  btnEl.textContent = '🔐 دخول';
+  btnEl.disabled = false;
 }
 
 function showAdminModal() {
@@ -1088,81 +1117,83 @@ function doAdminLogin() {
   }
 }
 
-function showAdminLogin() {
-  showAdminModal();
-}
+function showAdminLogin() { showAdminModal(); }
 
 // =========== ADMIN ===========
-function renderAdminSubs() {
+async function renderAdminSubs() {
   const list = document.getElementById('admin-subs-list');
-  list.innerHTML = '';
+  list.innerHTML = '<div style="color:rgba(255,255,255,0.4);text-align:center;padding:14px;">⏳ جاري التحميل...</div>';
 
-  if (USERS.length === 0) {
-    list.innerHTML = '<div style="color:rgba(255,255,255,0.3);text-align:center;padding:10px;">لا يوجد مشتركين</div>';
-    return;
+  try {
+    const data = await sbFetch('subscribers?select=id,username,password,created_at&order=created_at.desc');
+    list.innerHTML = '';
+
+    if (!data || data.length === 0) {
+      list.innerHTML = '<div style="color:rgba(255,255,255,0.3);text-align:center;padding:10px;">لا يوجد مشتركين</div>';
+      return;
+    }
+
+    data.forEach(u => {
+      const row = document.createElement('div');
+      row.className = 'subscriber-row';
+      const date = new Date(u.created_at).toLocaleDateString('ar-SA');
+      row.innerHTML = `
+        <div class="sub-info">
+          <div class="sub-name">👤 ${u.username}</div>
+          <div class="sub-pass">🔑 ${u.password} &nbsp;·&nbsp; 📅 ${date}</div>
+        </div>
+        <div class="sub-del" onclick="deleteSubscriber(${u.id}, '${u.username}')">✕</div>
+      `;
+      list.appendChild(row);
+    });
+  } catch(e) {
+    list.innerHTML = '<div style="color:var(--danger);text-align:center;padding:10px;">⚠️ خطأ في الاتصال</div>';
   }
-
-  USERS.forEach((u, i) => {
-    const row = document.createElement('div');
-    row.className = 'subscriber-row';
-    row.innerHTML = `
-      <div class="sub-info">
-        <div class="sub-name">👤 ${u.username}</div>
-        <div class="sub-pass">🔑 ${u.password}</div>
-      </div>
-      <div class="sub-del" onclick="deleteSubscriber(${i})">✕</div>
-    `;
-    list.appendChild(row);
-  });
 }
 
-function addSubscriber() {
+async function addSubscriber() {
   const user = document.getElementById('new-sub-user').value.trim();
   const pass = document.getElementById('new-sub-pass').value.trim();
+  const btn  = document.querySelector('.add-sub-form .btn-primary');
 
   if (!user || !pass) { alert('أدخل الاسم وكلمة السر!'); return; }
-  if (USERS.find(u => u.username === user)) { alert('هذا المستخدم موجود مسبقاً!'); return; }
 
-  USERS.push({ username: user, password: pass });
-  document.getElementById('new-sub-user').value = '';
-  document.getElementById('new-sub-pass').value = '';
-  renderAdminSubs();
-  showSaveNotice();
+  btn.textContent = '⏳';
+  btn.disabled = true;
+
+  try {
+    await sbFetch('subscribers', {
+      method: 'POST',
+      body: JSON.stringify({ username: user, password: pass })
+    });
+    document.getElementById('new-sub-user').value = '';
+    document.getElementById('new-sub-pass').value = '';
+    showSaveNotice('✅ تمت الإضافة!');
+    renderAdminSubs();
+  } catch(e) {
+    alert('خطأ: ' + (e.message.includes('duplicate') ? 'هذا المستخدم موجود مسبقاً!' : e.message));
+  }
+
+  btn.textContent = '＋ إضافة';
+  btn.disabled = false;
 }
 
-function deleteSubscriber(idx) {
-  if (!confirm(`حذف "${USERS[idx].username}"؟`)) return;
-  USERS.splice(idx, 1);
-  renderAdminSubs();
-  showSaveNotice();
+async function deleteSubscriber(id, name) {
+  if (!confirm(`حذف "${name}"؟`)) return;
+  try {
+    await sbFetch(`subscribers?id=eq.${id}`, { method: 'DELETE' });
+    showSaveNotice('🗑️ تم الحذف');
+    renderAdminSubs();
+  } catch(e) {
+    alert('خطأ في الحذف: ' + e.message);
+  }
 }
 
-function showSaveNotice() {
+function showSaveNotice(msg = '✅ تم التحديث') {
   const el = document.getElementById('save-notice');
+  el.textContent = msg;
   el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 4000);
-}
-
-function downloadUpdatedFile() {
-  // قراءة الملف الحالي وتحديث قائمة USERS فيه
-  const usersJson = JSON.stringify(USERS, null, 2)
-    .replace(/"/g, "'")
-    .replace(/\[/g, '[')
-    .replace(/\]/g, ']');
-
-  // استبدال قائمة USERS في الكود
-  const currentHTML = document.documentElement.outerHTML;
-  const usersPattern = /let USERS = \[[\s\S]*?\];/;
-  const newUsersStr = `let USERS = ${usersJson};`;
-  const updatedHTML = currentHTML.replace(usersPattern, newUsersStr);
-
-  // تحميل الملف
-  const blob = new Blob([updatedHTML], { type: 'text/html;charset=utf-8' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'naamous.html';
-  a.click();
-  URL.revokeObjectURL(a.href);
+  setTimeout(() => el.classList.remove('show'), 3000);
 }
 
 // Enter key support
